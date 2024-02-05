@@ -1,7 +1,5 @@
 
 
-
-
 -- use this script to run month end reporting for finance - in particular the echoice portfolio
 
 
@@ -30,6 +28,8 @@ format(dateadd(month,-1,commission_date),'yyyyMM')
 
 
 
+
+
 -- More detailed view of settlements vs draw downs	
 select 		
 format(dateadd(month,-1,commission_date),'yyyyMM') as settlement_month		
@@ -37,9 +37,13 @@ format(dateadd(month,-1,commission_date),'yyyyMM') as settlement_month
 		when group_id = 6348 then 'Finsure' 
 		else 'Loankit' end as Loan_Group	
 , branch_model_name
+, DATEDIFF(MONTH,EOMONTH(settlement_date), EOMONTH(DATEADD(month,-1,commission_date))) + 1 as Loan_Tenure_months
+, DATEDIFF(MONTH,EOMONTH(settlement_date), cast('2022-02-28' as date)) + 1 as Loan_Tenure_at_purchase
 , sum(case when Settlements_Flag = 'True' then original_balance else 0 end) as settlements		
 , sum(case when loanbook_flag = 'True' then current_balance else 0 end) as Loanbook		
 , sum(case when commission_type = 'trail' and lender_type <> 'insurance' then current_balance else 0 end) as TrailBook		
+, count(case when commission_type = 'trail' and lender_type <> 'insurance' then loan_account_number else null end) as TrailBook_count
+
 --original/current balance opposite
 -- , sum(case when Settlements_Flag = 'True' then current_balance else 0 end) as settlements_curr
 -- , sum(case when loanbook_flag = 'True' then original_balance else 0 end) as Loanbook_orig
@@ -52,10 +56,44 @@ format(dateadd(month,-1,commission_date),'yyyyMM')
 		when group_id = 6348 then 'Finsure' 
 		else 'Loankit' end
 , branch_model_name
+, DATEDIFF(MONTH,EOMONTH(settlement_date), EOMONTH(DATEADD(month,-1,commission_date))) + 1
+, DATEDIFF(MONTH,EOMONTH(settlement_date), cast('2022-02-28' as date)) + 1
 ;		
 		
-	
 
+
+
+
+
+-- clawback data 
+select 		
+format(dateadd(month,-1,commission_date),'yyyyMM') as settlement_month		
+, case when branch_id = 49900 then 'eChoice'		
+		when group_id = 6348 then 'Finsure' 
+		else 'Loankit' end as Loan_Group	
+, sum(processed_comm_amt_incl_gst) Total_Processed_Commissions
+--original/current balance opposite
+-- , sum(case when Settlements_Flag = 'True' then current_balance else 0 end) as settlements_curr
+-- , sum(case when loanbook_flag = 'True' then original_balance else 0 end) as Loanbook_orig
+-- , sum(case when commission_type = 'trail' and lender_type <> 'insurance' then original_balance else 0 end) as TrailBook_orig
+, sum(fee_charged_incl_gst) as fees_charged_inc_gst
+from warehouse.vwCommissionTransactions		
+where Clawback_Flag = 'TRUE'
+group by 		
+format(dateadd(month,-1,commission_date),'yyyyMM')		
+, case when branch_id = 49900 then 'eChoice'		
+		when group_id = 6348 then 'Finsure' 
+		else 'Loankit' end
+
+
+
+
+
+
+select 
+distinct run_date
+ from infinity.BranchRCTIs		
+where format(cast(commission_date as date),'yyyyMM') = '202401'
 
 
 
@@ -63,23 +101,23 @@ format(dateadd(month,-1,commission_date),'yyyyMM')
 select * from infinity.BranchRCTIs		
 where branch_id = 49900		
 and run_date in (		
-'29520_Wed_Nov_29_2023',
-'3173_Tue_Nov_28_2023'
+'1196_Tue_Jan_30_2024',
+'16787_Mon_Jan_29_2024'
 )
 
 		
 	-- eChoice Referrer RCTI	
 select * from infinity.ReferrerRCTI		
 where run_date in (		
-'29520_Wed_Nov_29_2023',
-'3173_Tue_Nov_28_2023'
+'1196_Tue_Jan_30_2024',
+'16787_Mon_Jan_29_2024'
 )	
 and branch_id = 49900		
 		
 
 
 
--- eChoice Referrer Transactions - to determine how much finsure earns form each trail loan in eChoice branch
+-- eChoice Referrer Transactions - to determine how much finsure earns from each trail loan in eChoice branch
 select 		
 format(cast(commission_date as date),'yyyyMM') as commission_month		
 , case when branch_id = 49900 then 'echoice referrer' else '' end as referrer_type		
@@ -91,8 +129,8 @@ format(cast(commission_date as date),'yyyyMM') as commission_month
 , sum(comm_amt_paid_to_referrer_incl_gst) as comm_amt_paid_to_referrer_incl_gst		
 from infinity.ReferrerTransactions		
 where run_date in (		
-'29520_Wed_Nov_29_2023',
-'3173_Tue_Nov_28_2023'
+'1196_Tue_Jan_30_2024',
+'16787_Mon_Jan_29_2024'
 )		
 and branch_id = 49900		
 group by 		
@@ -111,8 +149,8 @@ order by 1,2,3,4,5
 		
 select * from infinity.DEFile	
 where run_date in (		
-'29520_Wed_Nov_29_2023',
-'3173_Tue_Nov_28_2023'
+'1196_Tue_Jan_30_2024',
+'16787_Mon_Jan_29_2024'
 )		
 		
 		
@@ -130,13 +168,15 @@ format(commission_date,'yyyyMM')
 , fee_type
 , sum(amount_inc_gst)	fee_amount
 from infinity.multipleFeeAssigned		
-where format(commission_date,'yyyyMM') in ('202311')		
+where format(commission_date,'yyyyMM') in ('202401')		
 and agent_type in ('branch','group')		
 group by 
 format(commission_date,'yyyyMM')	
 , run_date
 , agent_type
 , fee_type
+
+
 
 
 -- check other fees are correct e.g. software etc.. 
@@ -150,7 +190,9 @@ run_date
 , sum(wh_fees_plus_gst) wh_fees_plus_gst
 from infinity.branchRecords
 where run_date in (
-'28302_Tue_Oct_31_2023','16239_Mon_Oct_30_2023')
+'1196_Tue_Jan_30_2024',
+'16787_Mon_Jan_29_2024'
+)
 group by 
 run_date
 
@@ -167,7 +209,10 @@ run_date
 , sum(branch_closing_balance) branch_closing_balance
 , sum(total_branch_fee_charged_incl_gst) total_branch_fee_charged_incl_gst
 from infinity.branchRCTIs
-where run_date in ('28302_Tue_Oct_31_2023','16239_Mon_Oct_30_2023')
+where run_date in (
+'1196_Tue_Jan_30_2024',
+'16787_Mon_Jan_29_2024'
+)
 group by 
 run_date
 
@@ -212,11 +257,10 @@ format(commission_date,'yyyyMM')
 , sum(sms_fee_plus_gst)		sms_fee_plus_gst
 , sum(flat_fees_plus_gst)		flat_fees_plus_gst
 from infinity.branchRecords		
-where format(commission_date,'yyyyMM') >=202211	
+where format(commission_date,'yyyyMM') = '202312'	
 group by 		
-format(commission_date,'yyyyMM')		
-		
-order by 1		
+format(commission_date,'yyyyMM')
+order by 1	
 		
 		
 		
@@ -633,7 +677,7 @@ ct.cm_commission_date
 , sum(ct.cm_fast_fee_plus_gst) as retained_commissions_plus_gst
 , sum(ct.cm_commission_amt_plus_gst - ct.cm_fast_fee_plus_gst) as commission_expense_plus_gst
 from infinity.commissionlines as ct
-where format(ct.cm_commission_date,'yyyyMM') = '202311'
+where format(ct.cm_commission_date,'yyyyMM') = '202401'
 group by 
 ct.cm_commission_date
 , ct.bank_fullname
@@ -643,11 +687,51 @@ ct.cm_commission_date
 
 
 
+-- commission income and expense -- upfront/trail
+
+select 		
+cm_commission_date
+, case when branch_id = 49900 then 'eChoice'		
+		when group_id = 6348 then 'Finsure' 
+		else 'Loankit' end as Loan_Group
+, bank_fullname
+, cm_model
+, cm_commType
+, sum(cm_commission_amt_plus_gst) as commission_income
+, sum(cm_remit_amount_branch) as Payments_to_Branches
+, sum(cm_payment_amt_broker) as Payments_to_Brokers
+, sum(coalesce(cm_payment_amt_plus_gst_ref1,0) + coalesce(cm_payment_amt_plus_gst_ref2,0) + coalesce(cm_payment_amt_plus_gst_ref3,0)) as Payments_to_Referrers
+, sum(coalesce(cm_remit_amount_branch,0) + coalesce(cm_payment_amt_broker,0) + coalesce(cm_payment_amt_plus_gst_ref1,0) + coalesce(cm_payment_amt_plus_gst_ref2,0) + coalesce(cm_payment_amt_plus_gst_ref3,0)) as Total_Payouts
+from infinity.commissionlines			
+group by 		
+cm_commission_date
+, case when branch_id = 49900 then 'eChoice'		
+		when group_id = 6348 then 'Finsure' 
+		else 'Loankit' end
+, bank_fullname
+, cm_model
+, cm_commType
+
+
+select 
+*
+From infinity.commissionlines	
+where cm_commission_date = '2024-01-30'
+and cm_bank_code = 'MKM'
+and cm_commType = 'clawback'
+
+group by 
+cm_commission_date
+, cm_commType
 
 
 
 
 
+
+select top 1000 * from infinity.commissionlines	
+where commission_date = '2023-12-21'
+and paid_to_broker_incl_gst <> 0 
 
 
 
@@ -909,3 +993,244 @@ order by base.TheDate
 
 
 
+select 
+commission_type
+, sum(processed_comm_amt_incl_gst) processed_comm_amt_incl_gst
+, sum(remitted_branch_incl_gst) remitted_branch_incl_gst
+from warehouse.vwCommissionTransactions 
+group by 
+commission_type
+
+
+
+-- clawback already happend by settlement vintage
+
+select 
+format(cm_commission_date,'yyyy') commission_year
+, format(cm_commission_date,'yyyyMM') commission_month
+, case when branch_id = 49900 then 'eChoice'		
+		when group_id = 6348 then 'Finsure' 
+		else 'Loankit' end as Loan_Group
+, case when cm_settle_date >= '2021-01-01' then 'post jan 2021' else 'other' end 
+, sum(cm_commission_amt_plus_gst) processed_comm_amt_incl_gst
+, sum(cm_remit_amount_branch) remitted_branch_incl_gst
+from infinity.commissionlines 
+where cm_commType in ('clawback','clawbacks')
+group by 
+format(cm_commission_date,'yyyy') 
+, format(cm_commission_date,'yyyyMM') 
+, case when branch_id = 49900 then 'eChoice'		
+		when group_id = 6348 then 'Finsure' 
+		else 'Loankit' end
+, case when cm_settle_date >= '2021-01-01' then 'post jan 2021' else 'other' end 
+
+
+
+
+select * 
+from infinity.commissionlines 
+where cm_commType in ('clawback','clawbacks')
+and cm_settle_date >= '2021-01-01'
+and format(cm_commission_date,'yyyyMM') = '202006'
+
+
+
+
+
+
+SELECT
+branch_name
+, closingCfb as closing_balance
+from infinity.branchRecords
+, 
+where format(commission_date,'yyyyMM') = '202312'
+
+
+
+select * from infinity.branchRecords
+where format(commission_date,'yyyyMM') = '202312'
+
+
+select 
+run_date
+, branch_id
+, branch_rcti_name
+, group_id
+, branch_opening_balance
+, branch_closing_balance
+from infinity.BranchRCTIs
+where format(cast(commission_date as date),'yyyyMM') = '202312'
+
+
+
+
+select 
+run_date
+, branch_id
+, branch_rcti_name
+, group_id
+, branch_opening_balance
+, branch_closing_balance
+from infinity.BranchRCTIs
+where format(cast(commission_date as date),'yyyyMM') = '202311'
+
+
+
+
+
+
+
+
+select 
+run_date
+, branch_id
+, branch_rcti_name
+, sum(branch_paid_amt_incl_gst)
+from infinity.BranchRCTIs
+where format(cast(commission_date as date),'yyyyMM') = '202312'
+group by 
+run_date
+, branch_id
+, branch_rcti_name
+
+
+
+
+
+select 
+*
+from infinity.branchRecords
+where run_date = '5305_Thu_Dec_21_2023'
+
+
+
+select 
+*
+from infinity.branchRecords
+where format(cast(commission_date as date),'yyyyMM') in ('202311','202312')
+
+
+
+
+
+select 
+*
+from infinity.multipleFeeAssigned
+where agent_type = 'branch'
+and format(commission_date,'yyyyMM') in ('202311','202312')
+
+
+
+
+
+
+
+
+
+select 
+*
+from infinity.referrerRecords
+where run_date = '5305_Thu_Dec_21_2023'
+
+
+
+select 
+*
+from infinity.branchRecords
+where branch_id = 75431
+and run_date = '5305_Thu_Dec_21_2023'
+
+
+
+select * from infinity.multipleFeeAssigned
+where run_date = '5305_Thu_Dec_21_2023'
+and agent_type = 'Branch'
+and agentid = '75431'
+
+
+
+select * from infinity.multipleFeeAssigned
+where run_date = '5305_Thu_Dec_21_2023'
+
+
+
+select * from infinity.commissionlines
+where cm_run_date = '5305_Thu_Dec_21_2023'
+and branch_id = 75431
+
+
+
+
+
+select * from infinity.executiveCommRecords
+where run_date = '5305_Thu_Dec_21_2023'
+
+
+
+
+
+
+
+with settlement_clawback_data as (
+select
+settl.cm_commission_seq
+, settl.cm_commRefID
+, settl.cm_commission_date
+, settl.group_id
+, settl.cm_bank_code
+, settl.cm_commission_amt_plus_gst
+, settl.cm_remit_amount_branch
+, row_number() over (partition by settl.cm_commRefID order by settl.cm_commission_date) as split_number
+, max(clb.cm_commission_date) as clawback_date
+from infinity.commissionlines as settl
+	left join infinity.commissionlines as clb
+		on clb.cm_commRefID = settl.cm_commRefID
+		and clb.cm_bank_code = settl.cm_bank_code
+		and clb.branch_id = settl.branch_id
+		and clb.cm_commType in ('clawback','clawbacks')
+		and clb.lender_type <> 'insurance'
+		and clb.cm_commission_date >= settl.cm_commission_date
+
+where settl.cm_commType = 'upfront'
+and settl.lender_type <> 'insurance'
+
+group by 
+settl.cm_commission_seq
+, settl.cm_commRefID
+, settl.cm_commission_date
+, settl.group_id
+, settl.cm_bank_code
+, settl.cm_commission_amt_plus_gst
+, settl.cm_remit_amount_branch
+)
+
+
+select 
+base.cm_commission_date
+, base.group_id
+, DATEDIFF(month,base.cm_commission_date,base.clawback_date) as months_till_clawback
+, case when base.clawback_date is null then null
+		when DATEDIFF(month,base.cm_commission_date,base.clawback_date) >= 0 and DATEDIFF(month,base.cm_commission_date,base.clawback_date) <= 12 then '1. 0 - 12 months'
+		when DATEDIFF(month,base.cm_commission_date,base.clawback_date) > 12 and DATEDIFF(month,base.cm_commission_date,base.clawback_date) <= 24 then '2. 12 - 24 months'
+		when DATEDIFF(month,base.cm_commission_date,base.clawback_date) > 24 and DATEDIFF(month,base.cm_commission_date,base.clawback_date) <= 48 then '3. 24 - 48 months'
+		when DATEDIFF(month,base.cm_commission_date,base.clawback_date) > 48 then '4. > 48 months'
+		else null end as Clawback_Period
+, split_number
+, cm_bank_code
+, sum(base.cm_commission_amt_plus_gst) as cm_commission_amt_plus_gst
+, sum(base.cm_remit_amount_branch) as cm_remit_amount_branch
+
+from settlement_clawback_data as base
+
+group by 
+base.cm_commission_date
+, base.group_id
+, DATEDIFF(month,base.cm_commission_date,base.clawback_date)
+, case when base.clawback_date is null then null
+		when DATEDIFF(month,base.cm_commission_date,base.clawback_date) >= 0 and DATEDIFF(month,base.cm_commission_date,base.clawback_date) <= 12 then '1. 0 - 12 months'
+		when DATEDIFF(month,base.cm_commission_date,base.clawback_date) > 12 and DATEDIFF(month,base.cm_commission_date,base.clawback_date) <= 24 then '2. 12 - 24 months'
+		when DATEDIFF(month,base.cm_commission_date,base.clawback_date) > 24 and DATEDIFF(month,base.cm_commission_date,base.clawback_date) <= 48 then '3. 24 - 48 months'
+		when DATEDIFF(month,base.cm_commission_date,base.clawback_date) > 48 then '4. > 48 months'
+		else null end
+, split_number
+, cm_bank_code
